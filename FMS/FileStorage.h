@@ -78,6 +78,12 @@ public:
 	/// <returns>파일 스트림</returns>
 	std::istream* OpenFile(const std::wstring& _filename);
 
+	/// <summary>
+	/// 인덱스 파일 읽기
+	/// </summary>
+	/// <returns>성공 여부</returns>
+	bool ResetCompressInfoMap();
+
 private:
 
 	/// <summary>

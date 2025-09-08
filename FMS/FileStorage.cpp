@@ -130,7 +130,7 @@ void FileStorage::CompressDirectory(const std::wstring& _path, std::ofstream& ou
 
 					// 새 파트 파일을 생성하고 연다
 					std::wstring currentPartPath =
-						m_compressPath + L"\\part_" 
+						m_compressPath + L"\\part_"
 						+ std::to_wstring(partIndex++)
 						+ m_comExtension;
 
@@ -276,7 +276,7 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 		indexFile.write(reinterpret_cast<char*>(&blockCount), sizeof(blockCount));
 
 		// 블록 정보
-		for (auto& block : comFileInfo.m_blocks) 
+		for (auto& block : comFileInfo.m_blocks)
 		{
 			// 해당 블록이 있는 파트 번호
 			indexFile.write(reinterpret_cast<const char*>(&block.m_partIndex), sizeof(block.m_partIndex));
@@ -289,11 +289,17 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 		}
 	}
 
+	m_compressInfoMap.clear();
 	return true;
 }
 
 std::istream* FileStorage::OpenFile(const std::wstring& _filename)
 {
+	if (true == m_compressInfoMap.empty())
+	{
+		ResetCompressInfoMap();
+	}
+
 	// 캐시 확인
 	auto cache = m_fileChace.find(_filename);
 	if (cache != m_fileChace.end())
@@ -362,4 +368,63 @@ std::istream* FileStorage::OpenFile(const std::wstring& _filename)
 	return m_fileChace[_filename].get();
 }
 
+bool FileStorage::ResetCompressInfoMap()
+{
+	// 인덱스 파일 읽기
+	std::ifstream indexFile(m_compressPath + L"\\.index");
+	if (!indexFile)
+	{
+		return false;
+	}
+
+	// 전체 파일 갯수
+	int fileCount = 0;
+	indexFile.read(reinterpret_cast<char*>(&fileCount), sizeof(uint32_t));
+	if (fileCount < 0)
+	{
+		return false;
+	}
+
+	// 모든 파일에 대한 데이터 읽기
+	for (int i = 0; i < fileCount; i++)
+	{
+		// 압축 파일 정보
+		uint32_t nameLen = 0;
+		std::wstring name;
+
+		// 파일 이름
+		indexFile.read(reinterpret_cast<char*>(&nameLen), sizeof(uint32_t));
+		name.resize(nameLen / sizeof(wchar_t));
+		indexFile.read(reinterpret_cast<char*>(&name[0]), nameLen);
+
+		// 파일 맵 생성
+		m_compressInfoMap[name] = CompressInfo();
+		CompressInfo& comFileInfo = m_compressInfoMap[name];
+
+		// 파일 원본 크기
+		indexFile.read(reinterpret_cast<char*>(&comFileInfo.m_totalOriginalSize), sizeof(comFileInfo.m_totalOriginalSize));
+
+		// 블록 갯수
+		uint32_t blockCount = static_cast<uint32_t>(comFileInfo.m_blocks.size());
+		indexFile.read(reinterpret_cast<char*>(&blockCount), sizeof(blockCount));
+
+		// 블록 정보
+		for (int j = 0; j < blockCount; j++)
+		{
+			BlockInfo block;
+
+			// 해당 블록이 있는 파트 번호
+			indexFile.read(reinterpret_cast<char*>(&block.m_partIndex), sizeof(block.m_partIndex));
+			// 블록이 어느 위치에 있는지
+			indexFile.read(reinterpret_cast<char*>(&block.m_offset), sizeof(block.m_offset));
+			// 블록의 크기
+			indexFile.read(reinterpret_cast<char*>(&block.m_compressedSize), sizeof(block.m_compressedSize));
+			// 압축 해제 후 원본 크기
+			indexFile.read(reinterpret_cast<char*>(&block.m_originalSize), sizeof(block.m_originalSize));
+			comFileInfo.m_blocks.push_back(block);
+		}
+	}
+
+	return true;
+}
 
