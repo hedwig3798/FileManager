@@ -10,6 +10,7 @@
 #include <vector>
 #include <algorithm>
 #include "lz4.h"
+#include "MemoryFileStream.h"
 
 /// <summary>
 /// File Management System
@@ -19,20 +20,27 @@ class FileStorage
 {
 private:
 	/// <summary>
-	/// 파일 정보 구조체
+	/// 압축 블록 정보 구조체
 	/// </summary>
-	struct FileEntry 
+	struct BlockInfo
 	{
-		std::wstring name;			// 파일 원본 이름
-		std::wstring partPath;		// 압축 파트 경로
-		uint64_t offset;			// 압축 파트의 시작 위치
-		uint64_t compressedSize;	// 압축된 파일 사이즈
-		uint64_t originalSize;		// 원본 파일 사이즈
+		uint64_t m_partIndex;
+		uint64_t m_offset;
+		uint64_t m_compressedSize;
+		uint64_t m_originalSize;
 	};
 
-	std::map<std::wstring, std::unique_ptr<std::ifstream>> m_filemap;
-	std::map<std::wstring, FileEntry> m_fileEntrymap;
-	std::wstring m_rootDir;
+	/// <summary>
+	/// 압축 정보 구조체
+	/// </summary>
+	struct CompressInfo 
+	{
+		uint64_t m_totalOriginalSize = 0;
+		std::vector<BlockInfo> m_blocks;
+	};
+
+	std::map<std::wstring, CompressInfo> m_compressInfoMap;
+	std::map<std::wstring, std::unique_ptr<MemoryFileStream>> m_fileChace;
 
 	std::wstring m_compressPath;
 	std::wstring m_decompressPath;
@@ -46,23 +54,11 @@ public:
 	virtual ~FileStorage();
 
 public:
-	std::ifstream* GetFileStream(const std::wstring& _fileName);
 
-	void SetRootDirectory(const std::wstring& _root) { m_rootDir = _root; };
 	void SetCompressExtension(const std::wstring& _extension) { m_comExtension = _extension; };
 	void SetDecompressOutputPath(const std::wstring& _path) { m_decompressPath = _path; };
-	void SetCompressOutputPath(const std::wstring& _path) { m_compressPath = _path; };
+	void SetCompressFilePath(const std::wstring& _path) { m_compressPath = _path; };
 	void SetOutputFileName(const std::wstring& _name) { m_comFilename = _name; };
-
-	/// <summary>
-	/// 설정된 압축 파일 경로 내의 압축 파일 모든 로드
-	/// </summary>
-	void LoadCompressedFile();
-
-	/// <summary>
-	/// 모든 파일 스트림 초기화
-	/// </summary>
-	void ClearFilestream();
 
 	/// <summary>
 	/// 모든 파일의 이름을 출력
@@ -70,36 +66,19 @@ public:
 	void ShowAllFilename();
 
 	/// <summary>
-	/// 루트 디렉토리 가져오기
-	/// </summary>
-	/// <returns>루트 디렉토리</returns>
-	std::wstring GetRootDirectory() { return m_rootDir; };
-
-	/// <summary>
-	/// 로드 된 모든 파일 압축
+	/// 경로에 있는 모든 파일 압축
 	/// </summary>
 	/// <returns>성공 여부</returns>
-	bool CompressAll();
+	bool CompressAll(const std::wstring& _path);
 
 	/// <summary>
-	/// 지정된 폴더에 있는 모든 파일에 대해 압축 해제
+	/// 파일 열기
 	/// </summary>
-	/// <returns>성공 여부</returns>
-	bool DecompressAll();
-
-	/// <summary>
-	/// 로드된 모든 파일을 지정된 경로에 쓰기
-	/// </summary>
-	/// <param name="_path">경로</param>
-	void WriteAllFile(const std::wstring& _path);
-
+	/// <param name="_filename">파일 이름.확장자</param>
+	/// <returns>파일 스트림</returns>
+	std::istream* OpenFile(const std::wstring& _filename);
 
 private:
-	/// <summary>
-	/// 경로 아래의 모든 파일을 읽은 후 스트림을 저장한다.
-	/// </summary>
-	/// <param name="_path">경로</param>
-	void LoadAll(const std::wstring& _path);
 
 	/// <summary>
 	/// 디렉토리 생성
@@ -107,5 +86,24 @@ private:
 	/// <param name="_path">해당 경로의 디렉토리 생성</param>
 	/// <returns>성공 여부</returns>
 	bool CreateDirectory(const std::wstring& _path);
+
+	/// <summary>
+	/// 디렉토리 내의 모든 파일 압축
+	/// </summary>
+	/// <param name="_path">디렉토리</param>
+	/// <param name="outFile">압축 파일</param>
+	/// <param name="currentPartPath">현재 압축 파일 경로</param>
+	/// <param name="currentSize">현재 압축 파일 크기</param>
+	/// <param name="partIndex">파트 번호</param>
+	/// <param name="inBuffer">입력 버퍼</param>
+	/// <param name="outBuffer">출력 버퍼</param>
+	void CompressDirectory(
+		const std::wstring& _path
+		, std::ofstream& outFile
+		, size_t& currentSize
+		, size_t& partIndex
+		, std::vector<char>& inBuffer
+		, std::vector<char>& outBuffer
+	);
 };
 

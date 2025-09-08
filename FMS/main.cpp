@@ -5,14 +5,18 @@ int main()
 {
 	FileStorage fms;
 
-	fms.SetRootDirectory(L"E:\\FMS\\CompressTestOrigin");
+	fms.SetOutputFileName(L"comTest_");
 	fms.SetCompressExtension(L".rcom");
-	fms.SetCompressOutputPath(L"E:\\FMS\\CompressTest");
-	fms.SetDecompressOutputPath(L"E:\\FMS\\DecompressTest");
+	fms.SetCompressFilePath(L"E:\\FMS\\CompressTest");
 
-	// fms.ShowAllFilename();
+	fms.CompressAll(L"E:\\FMS\\CompressTestOrigin");
 
-	fms.CompressAll();
-	fms.DecompressAll();
+	std::istream* testFile;
+	testFile = fms.OpenFile(L"AlphaBlend.h");
+
+	std::wstring content((std::istreambuf_iterator<char>(*testFile)), std::istreambuf_iterator<char>());
+
+	std::wcout << content;
+
 	return 0;
 }

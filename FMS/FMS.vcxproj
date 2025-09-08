@@ -22,11 +22,13 @@
     <ClCompile Include="FileStorage.cpp" />
     <ClCompile Include="lz4.c" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MemoryFileStream.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileStorage.h" />
     <ClInclude Include="lz4.h" />
     <ClInclude Include="stringUtil.h" />
+    <ClInclude Include="MemoryFileStream.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>

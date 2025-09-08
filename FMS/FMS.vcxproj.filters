@@ -13,6 +13,9 @@
     <Filter Include="String">
       <UniqueIdentifier>{3d168146-fdb2-402e-98be-9bbbc1ef6190}</UniqueIdentifier>
     </Filter>
+    <Filter Include="FileManageSystem\FileStream">
+      <UniqueIdentifier>{6e0199a4-fa0d-424e-a721-90c0a461c2d8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -24,6 +27,9 @@
     <ClCompile Include="lz4.c">
       <Filter>LZ4</Filter>
     </ClCompile>
+    <ClCompile Include="MemoryFileStream.cpp">
+      <Filter>FileManageSystem</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileStorage.h">
@@ -34,6 +40,9 @@
     </ClInclude>
     <ClInclude Include="stringUtil.h">
       <Filter>String</Filter>
+    </ClInclude>
+    <ClInclude Include="MemoryFileStream.h">
+      <Filter>FileManageSystem</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
