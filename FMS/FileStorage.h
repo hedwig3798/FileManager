@@ -117,21 +117,20 @@ private:
 	bool CompressWithThread();
 
 	/// <summary>
-	/// 스레드 없이 압축하는 함수
+	/// 스레드 없이 패킹
 	/// </summary>
-	/// <param name="_path">압축할 파일 경로</param>
-	/// <param name="_name">파일 이름</param>
 	/// <param name="_outFile">출력 파일</param>
-	/// <param name="_currentSize">현 출력 파일 크기</param>
-	/// <param name="_partIndex">작성 할 파트</param>
-	/// <returns>성공 여부</returns>
+	/// <param name="_currentSize">현재 파일 크기</param>
+	/// <param name="_partIndex">파트 인덱스</param>
+	/// <param name="_comInfo">압축 정보 구조체</param>
+	/// <param name="_oriBuffer">최종 작성 할 파일</param>
+	/// <param name="_dataSize">데이터 블록 크기</param>
+	/// <returns>결과값</returns>
 	bool CompressWithNonThread(
-		const std::wstring& _path
-		, const std::wstring& _name
-		, std::ofstream& _outFile
+		OUT std::ofstream& _outFile
 		, size_t& _currentSize
 		, size_t& _partIndex
-		, CompressInfo& _comInfo
+		, OUT CompressInfo& _comInfo
 		, std::vector<unsigned char>& _oriBuffer
 		, size_t _dataSize
 	);

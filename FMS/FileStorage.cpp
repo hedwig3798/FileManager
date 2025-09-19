@@ -117,16 +117,19 @@ bool FileStorage::CompressDirectory(
 					// 파일 읽기
 					oriFile.read(reinterpret_cast<char*>(oriBuffer.data()), toRead);
 
-					CompressWithNonThread(
-						fullPath
-						, name
-						, outFile
+					bool isCompressSuccess = CompressWithNonThread(
+						outFile
 						, currentSize
 						, partIndex
 						, comInfo
 						, oriBuffer
 						, toRead
 					);
+					if (false == isCompressSuccess)
+					{
+						return false;
+					}
+
 					// 남은 파일 크기
 					remaining -= toRead;
 				}
@@ -149,12 +152,10 @@ bool FileStorage::CompressWithThread()
 }
 
 bool FileStorage::CompressWithNonThread(
-	const std::wstring& _path
-	, const std::wstring& _name
-	, std::ofstream& _outFile
+	std::ofstream& _outFile
 	, size_t& _currentSize
 	, size_t& _partIndex
-	, CompressInfo& _comInfo
+	, OUT CompressInfo& _comInfo
 	, std::vector<unsigned char>& _oriBuffer
 	, size_t _dataSize
 )
