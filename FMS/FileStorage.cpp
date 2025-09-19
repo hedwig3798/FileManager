@@ -11,6 +11,7 @@ FileStorage::FileStorage()
 	, m_decompressPath(L"")
 	, m_blockSize(0)
 	, m_maxPartSize(0)
+	, m_threadCount(0)
 {
 }
 
@@ -44,8 +45,7 @@ bool FileStorage::CompressDirectory(
 	, std::ofstream& outFile
 	, size_t& currentSize
 	, size_t& partIndex
-	, std::vector<unsigned char>& oriBuffer
-	, std::vector<unsigned char>& outBuffer)
+)
 {
 	// 입력받은 디렉토리 열기
 	WIN32_FIND_DATAW fd;
@@ -77,121 +77,143 @@ bool FileStorage::CompressDirectory(
 			CompressDirectory(fullPath,
 				outFile,
 				currentSize,
-				partIndex,
-				oriBuffer,
-				outBuffer);
+				partIndex
+				);
 		}
 		// 파일만 압축
 		else
 		{
-			// 파일 스트림
-			std::ifstream oriFile(fullPath, std::ios::binary);
-
-			// 파일 열기 실패
-			if (!oriFile)
-			{
-				continue;
-			}
-
-			// 압축 데이터
-			CompressInfo comInfo;
-
-			// 파일 크기 구하기
-			oriFile.seekg(0, std::ios::end);
-			uint64_t fileSize = oriFile.tellg();
-			oriFile.seekg(0, std::ios::beg);
-
-			comInfo.m_totalOriginalSize = fileSize;
-
-			// 파일 압축 시작
-			uint64_t remaining = fileSize;
-			// 압축 할 크기가 남아있다면
-			while (remaining > 0)
-			{
-				// 읽을 크기 구하기 ( 남아있는 크기와, 한 블록의 크기 중 작은것 )
-				size_t toRead = std::min<uint64_t>(m_blockSize, remaining);
-
-				// 파일 읽기
-				oriFile.read(reinterpret_cast<char*>(oriBuffer.data()), toRead);
-
-				// 읽은 부분 압축
-				int compressedSize =
-					::LZ4_compress_HC(
-						reinterpret_cast<char*>(oriBuffer.data())
-						, reinterpret_cast<char*>(outBuffer.data())
-						, static_cast<int>(toRead)
-						, static_cast<int>(outBuffer.size())
-						, 9
-					);
-
-				// 압축된 크기가 0 이하면 문제가 있다.
-				if (compressedSize <= 0)
-				{
-					return false;
-				}
-
-				BlockInfo bInfo;
-
-				// 암호화를 위한 데이터 생성
-				::RAND_bytes(bInfo.m_key, sizeof(bInfo.m_key));
-				::RAND_bytes(bInfo.m_iv, sizeof(bInfo.m_iv));
-
-				std::vector<unsigned char> encrypted;
-				if (false == AES::CryptCTR(outBuffer, encrypted, bInfo.m_key, bInfo.m_iv))
-				{
-					return false;
-				}
-
-				// 현재 파트 파일이 꽉 찼으면 새로 생성
-				if (currentSize + sizeof(uint32_t) + compressedSize > m_maxPartSize)
-				{
-					// 현재 파트 파일을 닫는다
-					if (outFile.is_open())
-					{
-						outFile.close();
-					}
-
-					// 새 파트 파일을 생성하고 연다
-					std::wstring currentPartPath =
-						m_compressPath + L"\\part_"
-						+ std::to_wstring(partIndex++)
-						+ m_comExtension;
-
-					outFile.open(currentPartPath, std::ios::binary);
-					currentSize = 0;
-				}
-
-				// 압축 데이터 기록
-				uint32_t compSize32 = static_cast<uint32_t>(compressedSize);
-				outFile.write(reinterpret_cast<char*>(&compSize32), sizeof(compSize32));
-
-				// 압축 및 암호화 된 데이터 기록
-				uint64_t offset = outFile.tellp();
-				outFile.write(reinterpret_cast<char*>(encrypted.data()), compressedSize);
-
-				// 블록 메타데이터 작성
-				bInfo.m_partIndex = partIndex - 1;
-				bInfo.m_offset = offset;
-				bInfo.m_compressedSize = compSize32;
-				bInfo.m_originalSize = toRead;
-
-				// 압축 정보에 블록 정보를 넣는다
-				comInfo.m_blocks.push_back(bInfo);
-
-				// 현재 파트 크기 증가
-				currentSize += sizeof(uint32_t) + compressedSize;
-
-				// 남은 파일 크기
-				remaining -= toRead;
-			}
-
-			// 모든 파일의 인덱스를 위한 기록
-			// 근데 이거 필요한건가? 흠...
-			m_compressInfoMap[name] = comInfo;
+			CompressWithNonThread(fullPath, name, outFile, currentSize, partIndex);
 		}
 	} while (FindNextFileW(hFind, &fd));
 
 	FindClose(hFind);
+	return true;
+}
+
+bool FileStorage::CompressWithThread()
+{
+	return false;
+}
+
+bool FileStorage::CompressWithNonThread(
+	const std::wstring& _path
+	, const std::wstring& _name
+	, std::ofstream& _outFile
+	, size_t& _currentSize
+	, size_t& _partIndex
+)
+{
+	// 원본 파일 데이터 버퍼
+	std::vector<unsigned char> oriBuffer(m_blockSize);
+	// 압축 데이터 버퍼
+	std::vector<unsigned char> outBuffer(::LZ4_compressBound(static_cast<int>(m_blockSize)));
+
+	// 파일 스트림
+	std::ifstream oriFile(_path, std::ios::binary);
+
+	// 파일 열기 실패
+	if (!oriFile)
+	{
+		return false;
+	}
+
+	// 압축 데이터
+	CompressInfo comInfo;
+
+	// 파일 크기 구하기
+	oriFile.seekg(0, std::ios::end);
+	uint64_t fileSize = oriFile.tellg();
+	oriFile.seekg(0, std::ios::beg);
+
+	comInfo.m_totalOriginalSize = fileSize;
+
+	// 파일 압축 시작
+	uint64_t remaining = fileSize;
+	// 압축 할 크기가 남아있다면
+	while (remaining > 0)
+	{
+		// 읽을 크기 구하기 ( 남아있는 크기와, 한 블록의 크기 중 작은것 )
+		size_t toRead = std::min<uint64_t>(m_blockSize, remaining);
+
+		// 파일 읽기
+		oriFile.read(reinterpret_cast<char*>(oriBuffer.data()), toRead);
+
+		// 읽은 부분 압축
+		int compressedSize =
+			::LZ4_compress_HC(
+				reinterpret_cast<char*>(oriBuffer.data())
+				, reinterpret_cast<char*>(outBuffer.data())
+				, static_cast<int>(toRead)
+				, static_cast<int>(outBuffer.size())
+				, 9
+			);
+
+		// 압축된 크기가 0 이하면 문제가 있다.
+		if (compressedSize <= 0)
+		{
+			return false;
+		}
+
+		BlockInfo bInfo;
+
+		// 암호화를 위한 데이터 생성
+		::RAND_bytes(bInfo.m_key, sizeof(bInfo.m_key));
+		::RAND_bytes(bInfo.m_iv, sizeof(bInfo.m_iv));
+
+		std::vector<unsigned char> encrypted;
+		if (false == AES::CryptCTR(outBuffer, encrypted, bInfo.m_key, bInfo.m_iv))
+		{
+			return false;
+		}
+
+		// 현재 파트 파일이 꽉 찼으면 새로 생성
+		if (_currentSize + sizeof(uint32_t) + compressedSize > m_maxPartSize)
+		{
+			// 현재 파트 파일을 닫는다
+			if (_outFile.is_open())
+			{
+				_outFile.close();
+			}
+
+			// 새 파트 파일을 생성하고 연다
+			std::wstring currentPartPath =
+				m_compressPath + L"\\part_"
+				+ std::to_wstring(_partIndex++)
+				+ m_comExtension;
+
+			_outFile.open(currentPartPath, std::ios::binary);
+			_currentSize = 0;
+		}
+
+		// 압축 데이터 기록
+		uint32_t compSize32 = static_cast<uint32_t>(compressedSize);
+		_outFile.write(reinterpret_cast<char*>(&compSize32), sizeof(compSize32));
+
+		// 압축 및 암호화 된 데이터 기록
+		uint64_t offset = _outFile.tellp();
+		_outFile.write(reinterpret_cast<char*>(encrypted.data()), compressedSize);
+
+		// 블록 메타데이터 작성
+		bInfo.m_partIndex = _partIndex - 1;
+		bInfo.m_offset = offset;
+		bInfo.m_compressedSize = compSize32;
+		bInfo.m_originalSize = toRead;
+
+		// 압축 정보에 블록 정보를 넣는다
+		comInfo.m_blocks.push_back(bInfo);
+
+		// 현재 파트 크기 증가
+		_currentSize += sizeof(uint32_t) + compressedSize;
+
+		// 남은 파일 크기
+		remaining -= toRead;
+	}
+
+	// 모든 파일의 인덱스를 위한 기록
+	// 근데 이거 필요한건가? 흠...
+	m_compressInfoMap[_name] = comInfo;
+
 	return true;
 }
 
@@ -248,22 +270,12 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 	// 현재 파트 파일 생성 및 열기
 	partFile.open(currentPartPath, std::ios::binary);
 
-	// 블록의 크기
-	const size_t blockSize = m_blockSize > 0 ? m_blockSize : 1024 * 1024;
-
-	// 원본 파일 데이터 버퍼
-	std::vector<unsigned char> oriBuffer(blockSize);
-	// 압축 데이터 버퍼
-	std::vector<unsigned char> comBuffer(LZ4_compressBound(static_cast<int>(blockSize)));
-
 	// 압축
 	bool isCompressSuccess = CompressDirectory(
 		_path
 		, partFile
 		, currentSize
 		, partIndex
-		, oriBuffer
-		, comBuffer
 	);
 
 	if (false == isCompressSuccess)

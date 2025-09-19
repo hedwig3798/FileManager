@@ -9,8 +9,8 @@
 #include <sstream>
 #include <vector>
 #include <algorithm>
-#include "lz4.h"
 #include "lz4hc.h"
+#include "lz4.h"
 #include "MemoryFileStream.h"
 
 /// <summary>
@@ -52,6 +52,9 @@ private:
 
 	size_t m_blockSize;
 	size_t m_maxPartSize;
+
+	uint32_t m_threadCount;
+
 public:
 	FileStorage();
 	virtual ~FileStorage();
@@ -104,15 +107,30 @@ private:
 	/// <param name="currentPartPath">현재 압축 파일 경로</param>
 	/// <param name="currentSize">현재 압축 파일 크기</param>
 	/// <param name="partIndex">파트 번호</param>
-	/// <param name="inBuffer">입력 버퍼</param>
-	/// <param name="outBuffer">출력 버퍼</param>
 	bool CompressDirectory(
 		const std::wstring& _path
-		, std::ofstream& outFile
-		, size_t& currentSize
-		, size_t& partIndex
-		, std::vector<unsigned char>& inBuffer
-		, std::vector<unsigned char>& outBuffer
+		, std::ofstream& _outFile
+		, size_t& _currentSize
+		, size_t& _partIndex
+	);
+
+	bool CompressWithThread();
+
+	/// <summary>
+	/// 스레드 없이 압축하는 함수
+	/// </summary>
+	/// <param name="_path">압축할 파일 경로</param>
+	/// <param name="_name">파일 이름</param>
+	/// <param name="_outFile">출력 파일</param>
+	/// <param name="_currentSize">현 출력 파일 크기</param>
+	/// <param name="_partIndex">작성 할 파트</param>
+	/// <returns>성공 여부</returns>
+	bool CompressWithNonThread(
+		const std::wstring& _path
+		, const std::wstring& _name
+		, std::ofstream& _outFile
+		, size_t& _currentSize
+		, size_t& _partIndex
 	);
 };
 

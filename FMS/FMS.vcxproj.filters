@@ -27,9 +27,6 @@
     <ClCompile Include="FileStorage.cpp">
       <Filter>FileManageSystem</Filter>
     </ClCompile>
-    <ClCompile Include="lz4.c">
-      <Filter>LZ4</Filter>
-    </ClCompile>
     <ClCompile Include="MemoryFileStream.cpp">
       <Filter>FileManageSystem</Filter>
     </ClCompile>
@@ -39,13 +36,13 @@
     <ClCompile Include="lz4hc.c">
       <Filter>LZ4</Filter>
     </ClCompile>
+    <ClCompile Include="lz4.c">
+      <Filter>LZ4</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileStorage.h">
       <Filter>FileManageSystem</Filter>
-    </ClInclude>
-    <ClInclude Include="lz4.h">
-      <Filter>LZ4</Filter>
     </ClInclude>
     <ClInclude Include="stringUtil.h">
       <Filter>String</Filter>
@@ -57,6 +54,9 @@
       <Filter>Encrypter</Filter>
     </ClInclude>
     <ClInclude Include="lz4hc.h">
+      <Filter>LZ4</Filter>
+    </ClInclude>
+    <ClInclude Include="lz4.h">
       <Filter>LZ4</Filter>
     </ClInclude>
   </ItemGroup>
