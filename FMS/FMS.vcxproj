@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="lz4hc.c" />
     <ClCompile Include="SecureCodec.cpp" />
     <ClCompile Include="FileStorage.cpp" />
     <ClCompile Include="lz4.c" />
@@ -26,6 +27,7 @@
     <ClCompile Include="MemoryFileStream.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="lz4hc.h" />
     <ClInclude Include="SecureCodec.h" />
     <ClInclude Include="FileStorage.h" />
     <ClInclude Include="lz4.h" />

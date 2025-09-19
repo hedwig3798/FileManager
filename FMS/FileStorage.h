@@ -10,6 +10,7 @@
 #include <vector>
 #include <algorithm>
 #include "lz4.h"
+#include "lz4hc.h"
 #include "MemoryFileStream.h"
 
 /// <summary>

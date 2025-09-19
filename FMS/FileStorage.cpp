@@ -116,12 +116,13 @@ bool FileStorage::CompressDirectory(
 
 				// 읽은 부분 압축
 				int compressedSize =
-					LZ4_compress_default(
+					::LZ4_compress_HC(
 						reinterpret_cast<char*>(oriBuffer.data())
 						, reinterpret_cast<char*>(outBuffer.data())
 						, static_cast<int>(toRead)
-						, static_cast<int>(outBuffer.size()
-							));
+						, static_cast<int>(outBuffer.size())
+						, 9
+					);
 
 				// 압축된 크기가 0 이하면 문제가 있다.
 				if (compressedSize <= 0)
