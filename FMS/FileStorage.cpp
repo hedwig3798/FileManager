@@ -1,5 +1,7 @@
 ﻿#include "FileStorage.h"
 #include "stringUtil.h"
+#include "SecureCodec.h"
+
 #include <iostream>
 
 FileStorage::FileStorage()
@@ -37,7 +39,13 @@ bool FileStorage::CreateDirectory(const std::wstring& _path)
 	return true;
 }
 
-void FileStorage::CompressDirectory(const std::wstring& _path, std::ofstream& outFile, size_t& currentSize, size_t& partIndex, std::vector<char>& oriBuffer, std::vector<char>& outBuffer)
+bool FileStorage::CompressDirectory(
+	const std::wstring& _path
+	, std::ofstream& outFile
+	, size_t& currentSize
+	, size_t& partIndex
+	, std::vector<unsigned char>& oriBuffer
+	, std::vector<unsigned char>& outBuffer)
 {
 	// 입력받은 디렉토리 열기
 	WIN32_FIND_DATAW fd;
@@ -46,7 +54,7 @@ void FileStorage::CompressDirectory(const std::wstring& _path, std::ofstream& ou
 	// 실패
 	if (INVALID_HANDLE_VALUE == hFind)
 	{
-		return;
+		return false;
 	}
 
 	// 디렉토리 순회
@@ -104,19 +112,33 @@ void FileStorage::CompressDirectory(const std::wstring& _path, std::ofstream& ou
 				size_t toRead = std::min<uint64_t>(m_blockSize, remaining);
 
 				// 파일 읽기
-				oriFile.read(oriBuffer.data(), toRead);
+				oriFile.read(reinterpret_cast<char*>(oriBuffer.data()), toRead);
 
 				// 읽은 부분 압축
 				int compressedSize =
-					LZ4_compress_default(oriBuffer.data(),
-						outBuffer.data(),
-						static_cast<int>(toRead),
-						static_cast<int>(outBuffer.size()));
+					LZ4_compress_default(
+						reinterpret_cast<char*>(oriBuffer.data())
+						, reinterpret_cast<char*>(outBuffer.data())
+						, static_cast<int>(toRead)
+						, static_cast<int>(outBuffer.size()
+							));
 
 				// 압축된 크기가 0 이하면 문제가 있다.
 				if (compressedSize <= 0)
 				{
-					return;
+					return false;
+				}
+
+				BlockInfo bInfo;
+
+				// 암호화를 위한 데이터 생성
+				::RAND_bytes(bInfo.m_key, sizeof(bInfo.m_key));
+				::RAND_bytes(bInfo.m_iv, sizeof(bInfo.m_iv));
+
+				std::vector<unsigned char> encrypted;
+				if (false == AES::CryptCTR(outBuffer, encrypted, bInfo.m_key, bInfo.m_iv))
+				{
+					return false;
 				}
 
 				// 현재 파트 파일이 꽉 찼으면 새로 생성
@@ -142,12 +164,11 @@ void FileStorage::CompressDirectory(const std::wstring& _path, std::ofstream& ou
 				uint32_t compSize32 = static_cast<uint32_t>(compressedSize);
 				outFile.write(reinterpret_cast<char*>(&compSize32), sizeof(compSize32));
 
-				// 데이터 시작 위치 기록
+				// 압축 및 암호화 된 데이터 기록
 				uint64_t offset = outFile.tellp();
-				outFile.write(outBuffer.data(), compressedSize);
+				outFile.write(reinterpret_cast<char*>(encrypted.data()), compressedSize);
 
 				// 블록 메타데이터 작성
-				BlockInfo bInfo;
 				bInfo.m_partIndex = partIndex - 1;
 				bInfo.m_offset = offset;
 				bInfo.m_compressedSize = compSize32;
@@ -170,6 +191,7 @@ void FileStorage::CompressDirectory(const std::wstring& _path, std::ofstream& ou
 	} while (FindNextFileW(hFind, &fd));
 
 	FindClose(hFind);
+	return true;
 }
 
 void FileStorage::ShowAllFilename()
@@ -229,12 +251,12 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 	const size_t blockSize = m_blockSize > 0 ? m_blockSize : 1024 * 1024;
 
 	// 원본 파일 데이터 버퍼
-	std::vector<char> oriBuffer(blockSize);
+	std::vector<unsigned char> oriBuffer(blockSize);
 	// 압축 데이터 버퍼
-	std::vector<char> comBuffer(LZ4_compressBound(static_cast<int>(blockSize)));
+	std::vector<unsigned char> comBuffer(LZ4_compressBound(static_cast<int>(blockSize)));
 
 	// 압축
-	CompressDirectory(
+	bool isCompressSuccess = CompressDirectory(
 		_path
 		, partFile
 		, currentSize
@@ -242,6 +264,11 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 		, oriBuffer
 		, comBuffer
 	);
+
+	if (false == isCompressSuccess)
+	{
+		return false;
+	}
 
 	// 파트 파일 닫기
 	if (partFile.is_open())
@@ -286,6 +313,10 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 			indexFile.write(reinterpret_cast<const char*>(&block.m_compressedSize), sizeof(block.m_compressedSize));
 			// 압축 해제 후 원본 크기
 			indexFile.write(reinterpret_cast<const char*>(&block.m_originalSize), sizeof(block.m_originalSize));
+
+			// 암호화 정보 기록
+			indexFile.write(reinterpret_cast<const char*>(block.m_key), sizeof(block.m_key));
+			indexFile.write(reinterpret_cast<const char*>(block.m_iv), sizeof(block.m_iv));
 		}
 	}
 
@@ -318,11 +349,11 @@ std::istream* FileStorage::OpenFile(const std::wstring& _filename)
 	const CompressInfo& fileInfo = it->second;
 
 	// 전체 파일 데이터
-	std::vector<char> fileData;
+	std::vector<unsigned char> fileData;
 	// 원본 크기 만큼 확장
 	fileData.reserve(fileInfo.m_totalOriginalSize);
 
-	// 세그먼트 순서대로 해제
+	// 블록 순서대로 해제
 	for (const auto& block : fileInfo.m_blocks)
 	{
 		// 압축 파일 경로
@@ -339,16 +370,25 @@ std::istream* FileStorage::OpenFile(const std::wstring& _filename)
 
 		// 압축 파일의 오프셋 위치 부터 읽기 블록 데이터 읽기
 		comFile.seekg(block.m_offset, std::ios::beg);
-		std::vector<char> compBuf(block.m_compressedSize);
-		comFile.read(compBuf.data(), block.m_compressedSize);
+		std::vector<unsigned char> compBuf(block.m_compressedSize);
+		comFile.read(reinterpret_cast<char*>(compBuf.data()), block.m_compressedSize);
+
+		std::vector<unsigned char> decryptFile;
+		// 블록 데이터 복호화
+		if (false == AES::CryptCTR(compBuf, decryptFile, block.m_key, block.m_iv))
+		{
+			return nullptr;
+		}
 
 		// 블록 압축 해제
-		std::vector<char> decomFile(block.m_originalSize);
+		std::vector<unsigned char> decomFile(block.m_originalSize);
 		int decSize =
-			LZ4_decompress_safe(compBuf.data(),
-				decomFile.data(),
-				static_cast<int>(compBuf.size()),
-				static_cast<int>(decomFile.size()));
+			LZ4_decompress_safe(
+				reinterpret_cast<char*>(decryptFile.data())
+				, reinterpret_cast<char*>(decomFile.data())
+				, static_cast<int>(decryptFile.size())
+				, static_cast<int>(decomFile.size())
+			);
 
 		// 압축 해제 실패
 		if (decSize <= 0)
@@ -371,7 +411,7 @@ std::istream* FileStorage::OpenFile(const std::wstring& _filename)
 bool FileStorage::ResetCompressInfoMap()
 {
 	// 인덱스 파일 읽기
-	std::ifstream indexFile(m_compressPath + L"\\.index");
+	std::ifstream indexFile(m_compressPath + L"\\.index", std::ios::binary);
 	if (!indexFile)
 	{
 		return false;
@@ -405,11 +445,11 @@ bool FileStorage::ResetCompressInfoMap()
 		indexFile.read(reinterpret_cast<char*>(&comFileInfo.m_totalOriginalSize), sizeof(comFileInfo.m_totalOriginalSize));
 
 		// 블록 갯수
-		uint32_t blockCount = static_cast<uint32_t>(comFileInfo.m_blocks.size());
+		uint32_t blockCount;
 		indexFile.read(reinterpret_cast<char*>(&blockCount), sizeof(blockCount));
 
 		// 블록 정보
-		for (int j = 0; j < blockCount; j++)
+		for (uint32_t j = 0; j < blockCount; j++)
 		{
 			BlockInfo block;
 
@@ -421,6 +461,10 @@ bool FileStorage::ResetCompressInfoMap()
 			indexFile.read(reinterpret_cast<char*>(&block.m_compressedSize), sizeof(block.m_compressedSize));
 			// 압축 해제 후 원본 크기
 			indexFile.read(reinterpret_cast<char*>(&block.m_originalSize), sizeof(block.m_originalSize));
+			// 암호화 정보
+			indexFile.read(reinterpret_cast<char*>(block.m_key), sizeof(block.m_key));
+			indexFile.read(reinterpret_cast<char*>(block.m_iv), sizeof(block.m_iv));
+
 			comFileInfo.m_blocks.push_back(block);
 		}
 	}

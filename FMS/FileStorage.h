@@ -28,6 +28,8 @@ private:
 		uint64_t m_offset;
 		uint64_t m_compressedSize;
 		uint64_t m_originalSize;
+		unsigned char m_key[32];
+		unsigned char m_iv[16];
 	};
 
 	/// <summary>
@@ -103,13 +105,13 @@ private:
 	/// <param name="partIndex">파트 번호</param>
 	/// <param name="inBuffer">입력 버퍼</param>
 	/// <param name="outBuffer">출력 버퍼</param>
-	void CompressDirectory(
+	bool CompressDirectory(
 		const std::wstring& _path
 		, std::ofstream& outFile
 		, size_t& currentSize
 		, size_t& partIndex
-		, std::vector<char>& inBuffer
-		, std::vector<char>& outBuffer
+		, std::vector<unsigned char>& inBuffer
+		, std::vector<unsigned char>& outBuffer
 	);
 };
 

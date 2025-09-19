@@ -19,12 +19,14 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="SecureCodec.cpp" />
     <ClCompile Include="FileStorage.cpp" />
     <ClCompile Include="lz4.c" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MemoryFileStream.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="SecureCodec.h" />
     <ClInclude Include="FileStorage.h" />
     <ClInclude Include="lz4.h" />
     <ClInclude Include="stringUtil.h" />
@@ -114,13 +116,13 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>E:\boost_1_89_0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Program Files\OpenSSL-Win64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>E:\boost_1_89_0\stage\lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>boost_filesystem-vc143-mt-gd-x64-1_89.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>C:\Program Files\OpenSSL-Win64\lib\VC\x64\MDd\libssl.lib;C:\Program Files\OpenSSL-Win64\lib\VC\x64\MDd\libcrypto.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

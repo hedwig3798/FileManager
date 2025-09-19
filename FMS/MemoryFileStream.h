@@ -11,6 +11,7 @@ class MemoryFileStreamBuf
 {
 public:
 	MemoryFileStreamBuf(const std::vector<char>& _data);
+	MemoryFileStreamBuf(const std::vector<unsigned char>& _data);
 };
 
 /// <summary>
@@ -27,4 +28,5 @@ private:
 
 public:
 	MemoryFileStream(std::vector<char>&& _data);
+	MemoryFileStream(std::vector<unsigned char>&& _data);
 };
