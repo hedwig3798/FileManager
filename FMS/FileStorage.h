@@ -131,6 +131,9 @@ private:
 		, std::ofstream& _outFile
 		, size_t& _currentSize
 		, size_t& _partIndex
+		, CompressInfo& _comInfo
+		, std::vector<unsigned char>& _oriBuffer
+		, size_t _dataSize
 	);
 };
 
