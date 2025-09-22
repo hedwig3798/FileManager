@@ -1,4 +1,4 @@
-# FileManager (AES-CTR Resource Encryptor)
+# FileManager (LZ4 Compress, AES-CTR Encrypt)
 
 이 프로젝트는 아래의 라이브러리를 사용하여 기능을 제공합니다.
 1. lz4 를 사용하여 압축 기능을 제공합니다.
