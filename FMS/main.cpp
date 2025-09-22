@@ -27,6 +27,9 @@ int main()
 
 	FileStorage fms;
 
+	fms.SetThreadCount(4);
+	fms.SetChunkSize(1024);
+
 	fms.SetOutputFileName(L"comTest_");
 	fms.SetCompressExtension(L".rcom");
 	fms.SetCompressFilePath(L"E:\\FMS\\CompressTest");

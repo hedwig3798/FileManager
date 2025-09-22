@@ -4,6 +4,8 @@
 
 #include <iostream>
 
+bool FileStorage::JobInfo::m_isSuccess = true;
+
 FileStorage::FileStorage()
 	: m_compressInfoMap{}
 	, m_comExtension(L"")
@@ -12,6 +14,9 @@ FileStorage::FileStorage()
 	, m_blockSize(0)
 	, m_maxPartSize(0)
 	, m_threadCount(0)
+	, m_currentPartFileSize(0)
+	, m_partFileIndex(0)
+	, m_chunkSize(0)
 {
 }
 
@@ -42,9 +47,6 @@ bool FileStorage::CreateDirectory(const std::wstring& _path)
 
 bool FileStorage::CompressDirectory(
 	const std::wstring& _path
-	, std::ofstream& outFile
-	, size_t& currentSize
-	, size_t& partIndex
 )
 {
 	// 입력받은 디렉토리 열기
@@ -74,54 +76,52 @@ bool FileStorage::CompressDirectory(
 		// 디렉토리라면 재귀
 		if (FILE_ATTRIBUTE_DIRECTORY & fd.dwFileAttributes)
 		{
-			CompressDirectory(fullPath,
-				outFile,
-				currentSize,
-				partIndex
-			);
+			CompressDirectory(fullPath);
 		}
 		// 파일만 압축
 		else
 		{
-			// 원본 파일 데이터 버퍼
-			std::vector<unsigned char> oriBuffer(m_blockSize);
-
 			// 파일 스트림
 			std::ifstream oriFile(fullPath, std::ios::binary);
 
 			// 파일 열기 실패
-			if (!oriFile)
+			if (false == oriFile.is_open())
 			{
 				return false;
 			}
 
 			// 압축 데이터
-			CompressInfo comInfo;
+			std::shared_ptr<std::mutex> comInfoMutex = std::make_shared<std::mutex>();
+
+			// 모든 파일의 인덱스를 위한 기록
+			// 근데 이거 필요한건가? 흠...
+			// 스레드에서 참조하기 위해 일단 필요하다
+			m_compressInfoMap[name] = CompressInfo();
 
 			// 파일 크기 구하기
 			oriFile.seekg(0, std::ios::end);
 			uint64_t fileSize = oriFile.tellg();
 			oriFile.seekg(0, std::ios::beg);
 
-			comInfo.m_totalOriginalSize = fileSize;
+			m_compressInfoMap[name].m_totalOriginalSize = fileSize;
 
 			// 파일 분할 시작
 			uint64_t remaining = fileSize;
 			while (remaining > 0)
 			{
-				if (0 == m_threadCount)
+				// 원본 파일 데이터 버퍼
+				std::vector<unsigned char> oriBuffer(m_blockSize);
+
+				// 읽을 크기 구하기 ( 남아있는 크기와, 한 블록의 크기 중 작은것 )
+				uint64_t toRead = std::min<uint64_t>(m_blockSize, remaining);
+
+				// 파일 읽기
+				oriFile.read(reinterpret_cast<char*>(oriBuffer.data()), toRead);
+				if (1 >= m_threadCount)
 				{
-					// 읽을 크기 구하기 ( 남아있는 크기와, 한 블록의 크기 중 작은것 )
-					size_t toRead = std::min<uint64_t>(m_blockSize, remaining);
-
-					// 파일 읽기
-					oriFile.read(reinterpret_cast<char*>(oriBuffer.data()), toRead);
-
+					// 병렬 처리 없는 압축
 					bool isCompressSuccess = CompressWithNonThread(
-						outFile
-						, currentSize
-						, partIndex
-						, comInfo
+						m_compressInfoMap[name]
 						, oriBuffer
 						, toRead
 					);
@@ -130,14 +130,22 @@ bool FileStorage::CompressDirectory(
 						return false;
 					}
 
-					// 남은 파일 크기
-					remaining -= toRead;
 				}
+				else
+				{
+					// 새로운 압축 데이터를 큐에 넣음
+					JobInfo job(m_compressInfoMap[name]);
+					job.m_oriBuffer = std::move(oriBuffer);
+					job.m_dataSize = toRead;
+
+					std::lock_guard<std::mutex> lock(m_jobMutex);
+					m_jobQ.push(std::move(job));
+					m_jobCv.notify_one();
+				}
+				// 남은 파일 크기
+				remaining -= toRead;
 			}
 
-			// 모든 파일의 인덱스를 위한 기록
-			// 근데 이거 필요한건가? 흠...
-			m_compressInfoMap[name] = comInfo;
 
 		}
 	} while (FindNextFileW(hFind, &fd));
@@ -146,17 +154,164 @@ bool FileStorage::CompressDirectory(
 	return true;
 }
 
-bool FileStorage::CompressWithThread()
+
+void FileStorage::CompressWithThread()
 {
-	return false;
+	while (true)
+	{
+		std::unique_lock<std::mutex> lock(m_jobMutex);
+
+		// 모든 일이 끝나거나, 큐가 비어있지 않다면 아래로 진행
+		m_jobCv.wait(lock, [this]()
+			{
+				return true == m_alljobFinish || false == m_jobQ.empty();
+			}
+		);
+
+		// 모든 일이 끝났거나 큐가 비어있으면 무시한다.
+		if (true == m_alljobFinish
+			&& true == m_jobQ.empty())
+		{
+			break;
+		}
+
+		JobInfo job = std::move(m_jobQ.front());
+		m_jobQ.pop();
+		lock.unlock();
+
+		// 여기서 압축 해제 시작
+		// 압축 데이터 버퍼
+		std::vector<unsigned char> outBuffer(::LZ4_compressBound(static_cast<int>(m_blockSize)));
+
+		// 읽은 부분 압축
+		int compressedSize =
+			::LZ4_compress_HC(
+				reinterpret_cast<const char*>(job.m_oriBuffer.data())
+				, reinterpret_cast<char*>(outBuffer.data())
+				, static_cast<int>(job.m_dataSize)
+				, static_cast<int>(outBuffer.size())
+				, 9
+			);
+
+		// 압축된 크기가 0 이하면 문제가 있다.
+		if (compressedSize <= 0)
+		{
+			return;
+		}
+
+		outBuffer.resize(compressedSize);
+
+		BlockInfo bInfo;
+
+		// 암호화를 위한 데이터 생성
+		::RAND_bytes(bInfo.m_key, sizeof(bInfo.m_key));
+		::RAND_bytes(bInfo.m_iv, sizeof(bInfo.m_iv));
+
+		std::vector<unsigned char> encrypted;
+		if (false == AES::CryptCTR(outBuffer, encrypted, bInfo.m_key, bInfo.m_iv))
+		{
+			return;
+		}
+
+		// 블록 메타데이터 작성
+		bInfo.m_compressedSize = compressedSize;
+		bInfo.m_originalSize = job.m_dataSize;
+
+		// 락이 두개가 필요한가?
+		std::unique_lock<std::mutex> chunkLock(m_chunkMutex);
+
+		// 압축 정보에 블록 정보를 넣는다
+		job.m_comInfo.m_blocks.push_back(bInfo);
+		m_currentChunkSize += compressedSize;
+
+		m_chunk.push_back(
+			{
+				&job.m_comInfo.m_blocks.back()
+				, std::move(encrypted)
+			}
+		);
+
+		m_chunkCv.notify_one();
+
+		chunkLock.unlock();
+	}
+}
+
+void FileStorage::WriteChunkToFile()
+{
+	while (true)
+	{
+		std::unique_lock<std::mutex> lock(m_chunkMutex);
+
+		// 모든 일이 끝나거나, 데이터가 충분히 모였다면
+		m_chunkCv.wait(lock, [this]()
+			{
+				return true == m_chunkFinish || m_chunkSize <= m_currentChunkSize;
+			}
+		);
+
+		// 작업이 완료되고 남은 데이터가 없다면
+		if (true == m_chunkFinish
+			&& 0 == m_currentChunkSize)
+		{
+			break;
+		}
+
+		// 출력 파일이 없으면 무시한다.
+		if (false == m_currentPartFileStream.is_open())
+		{
+			break;
+		}
+
+		for (auto& chunk : m_chunk)
+		{
+			// 현재 파트 파일이 꽉 찼으면 새로 생성
+			if (m_currentPartFileSize + chunk.second.size() + sizeof(uint64_t) > m_maxPartSize)
+			{
+				// 현재 파트 파일을 닫는다
+				if (m_currentPartFileStream.is_open())
+				{
+					m_currentPartFileStream.close();
+				}
+
+				// 새 파트 파일을 생성하고 연다
+				std::wstring currentPartPath =
+					m_compressPath + L"\\part_"
+					+ std::to_wstring(m_partFileIndex++)
+					+ m_comExtension;
+
+				m_currentPartFileStream.open(currentPartPath, std::ios::binary);
+				m_currentPartFileSize = 0;
+			}
+
+			// 압축 데이터 기록
+			uint64_t compSize32 = chunk.first->m_compressedSize;
+			m_currentPartFileStream.write(reinterpret_cast<char*>(&compSize32), sizeof(compSize32));
+
+			// 압축 및 암호화 된 데이터 기록
+			uint64_t offset = m_currentPartFileStream.tellp();
+			m_currentPartFileStream.write(reinterpret_cast<char*>(chunk.second.data()), chunk.first->m_compressedSize);
+
+			// 블록 메타데이터 작성
+			chunk.first->m_partIndex = m_partFileIndex - 1;
+			chunk.first->m_offset = offset;
+
+			// 현재 파트 크기 증가
+			m_currentPartFileSize += static_cast<uint64_t>(sizeof(uint64_t)) + chunk.first->m_compressedSize;
+		}
+
+		// 청크 초기화
+		m_chunk.clear();
+		m_currentChunkSize = 0;
+	}
+
+
+	return;
 }
 
 bool FileStorage::CompressWithNonThread(
-	std::ofstream& _outFile
-	, size_t& _currentSize
-	, size_t& _partIndex
-	, OUT CompressInfo& _comInfo
-	, std::vector<unsigned char>& _oriBuffer
+	OUT CompressInfo& _comInfo
+	, const std::vector<unsigned char>& _oriBuffer
 	, size_t _dataSize
 )
 {
@@ -166,7 +321,7 @@ bool FileStorage::CompressWithNonThread(
 	// 읽은 부분 압축
 	int compressedSize =
 		::LZ4_compress_HC(
-			reinterpret_cast<char*>(_oriBuffer.data())
+			reinterpret_cast<const char*>(_oriBuffer.data())
 			, reinterpret_cast<char*>(outBuffer.data())
 			, static_cast<int>(_dataSize)
 			, static_cast<int>(outBuffer.size())
@@ -178,6 +333,8 @@ bool FileStorage::CompressWithNonThread(
 	{
 		return false;
 	}
+
+	outBuffer.resize(compressedSize);
 
 	BlockInfo bInfo;
 
@@ -192,34 +349,34 @@ bool FileStorage::CompressWithNonThread(
 	}
 
 	// 현재 파트 파일이 꽉 찼으면 새로 생성
-	if (_currentSize + sizeof(uint32_t) + compressedSize > m_maxPartSize)
+	if (m_currentPartFileSize + compressedSize + sizeof(uint32_t) > m_maxPartSize)
 	{
 		// 현재 파트 파일을 닫는다
-		if (_outFile.is_open())
+		if (m_currentPartFileStream.is_open())
 		{
-			_outFile.close();
+			m_currentPartFileStream.close();
 		}
 
 		// 새 파트 파일을 생성하고 연다
 		std::wstring currentPartPath =
 			m_compressPath + L"\\part_"
-			+ std::to_wstring(_partIndex++)
+			+ std::to_wstring(m_partFileIndex++)
 			+ m_comExtension;
 
-		_outFile.open(currentPartPath, std::ios::binary);
-		_currentSize = 0;
+		m_currentPartFileStream.open(currentPartPath, std::ios::binary);
+		m_currentPartFileSize = 0;
 	}
 
 	// 압축 데이터 기록
 	uint32_t compSize32 = static_cast<uint32_t>(compressedSize);
-	_outFile.write(reinterpret_cast<char*>(&compSize32), sizeof(compSize32));
+	m_currentPartFileStream.write(reinterpret_cast<char*>(&compSize32), sizeof(compSize32));
 
 	// 압축 및 암호화 된 데이터 기록
-	uint64_t offset = _outFile.tellp();
-	_outFile.write(reinterpret_cast<char*>(encrypted.data()), compressedSize);
+	uint64_t offset = m_currentPartFileStream.tellp();
+	m_currentPartFileStream.write(reinterpret_cast<char*>(encrypted.data()), compressedSize);
 
 	// 블록 메타데이터 작성
-	bInfo.m_partIndex = _partIndex - 1;
+	bInfo.m_partIndex = m_partFileIndex - 1;
 	bInfo.m_offset = offset;
 	bInfo.m_compressedSize = compSize32;
 	bInfo.m_originalSize = _dataSize;
@@ -228,7 +385,7 @@ bool FileStorage::CompressWithNonThread(
 	_comInfo.m_blocks.push_back(bInfo);
 
 	// 현재 파트 크기 증가
-	_currentSize += sizeof(uint32_t) + compressedSize;
+	m_currentPartFileSize += sizeof(uint32_t) + compressedSize;
 
 	return true;
 }
@@ -243,6 +400,9 @@ void FileStorage::ShowAllFilename()
 
 bool FileStorage::CompressAll(const std::wstring& _path)
 {
+	m_chunkFinish = false;
+	m_alljobFinish = false;
+
 	// 출력 디렉토리가 없다면 현재 디렉토리에 폴더 하나 만들어서 넣기
 	if (0 == m_compressPath.length())
 	{
@@ -273,26 +433,48 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 		return false;
 	}
 
-	// 초기 설정
-	// 1. 현재 파일 번호
-	// 2. 현재 압축 파일의 크기
-	// 3. 현재 압축 파일 스트림
-	size_t partIndex = 0;
-	size_t currentSize = 0;
-	std::ofstream partFile;
+	// 병렬처리를 하는 경우 미리 만들어두기
+	if (m_threadCount > 1)
+	{
+		m_threads.reserve(m_threadCount);
+
+		for (uint32_t i = 0; i < m_threadCount; i++)
+		{
+			m_threads.emplace_back([this]()
+				{
+					CompressWithThread();
+				}
+			);
+		}
+
+		m_chunkThread = std::thread([this]()
+			{
+				WriteChunkToFile();
+			}
+		);
+	}
 
 	// 현재 파트의 위치
-	std::wstring currentPartPath = m_compressPath + L"\\part_" + std::to_wstring(partIndex++) + m_comExtension;
+	std::wstring currentPartPath = m_compressPath + L"\\part_" + std::to_wstring(m_partFileIndex++) + m_comExtension;
 	// 현재 파트 파일 생성 및 열기
-	partFile.open(currentPartPath, std::ios::binary);
+	m_currentPartFileStream.open(currentPartPath, std::ios::binary);
 
 	// 압축
-	bool isCompressSuccess = CompressDirectory(
-		_path
-		, partFile
-		, currentSize
-		, partIndex
-	);
+	bool isCompressSuccess = CompressDirectory(_path);
+
+	if (m_threadCount > 1)
+	{
+		m_alljobFinish = true;
+		m_jobCv.notify_all();
+		for (uint32_t i = 0; i < m_threadCount; i++)
+		{
+			m_threads[i].join();
+		}
+
+		m_chunkFinish = true;
+		m_chunkCv.notify_all();
+		m_chunkThread.join();
+	}
 
 	if (false == isCompressSuccess)
 	{
@@ -300,9 +482,9 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 	}
 
 	// 파트 파일 닫기
-	if (partFile.is_open())
+	if (m_currentPartFileStream.is_open())
 	{
-		partFile.close();
+		m_currentPartFileStream.close();
 	}
 
 	// 인덱스 파일 생성
@@ -350,6 +532,7 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 	}
 
 	m_compressInfoMap.clear();
+	m_threads.clear();
 	return true;
 }
 
@@ -392,7 +575,7 @@ std::istream* FileStorage::OpenFile(const std::wstring& _filename)
 		std::ifstream comFile(currentPartPath, std::ios::binary);
 
 		// 파일 열기 실패
-		if (!comFile)
+		if (false == comFile.is_open())
 		{
 			return nullptr;
 		}
@@ -441,7 +624,7 @@ bool FileStorage::ResetCompressInfoMap()
 {
 	// 인덱스 파일 읽기
 	std::ifstream indexFile(m_compressPath + L"\\.index", std::ios::binary);
-	if (!indexFile)
+	if (false == indexFile.is_open())
 	{
 		return false;
 	}
