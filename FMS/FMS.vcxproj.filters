@@ -19,18 +19,12 @@
     <Filter Include="Encrypter">
       <UniqueIdentifier>{00f07528-2374-435c-9b9c-e8564a08aa93}</UniqueIdentifier>
     </Filter>
-    <Filter Include="ThreadPool">
-      <UniqueIdentifier>{4120d3f1-99d6-460c-9aac-147ffbcfea95}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>EntryPoint</Filter>
     </ClCompile>
     <ClCompile Include="FileStorage.cpp">
-      <Filter>FileManageSystem</Filter>
-    </ClCompile>
-    <ClCompile Include="MemoryFileStream.cpp">
       <Filter>FileManageSystem</Filter>
     </ClCompile>
     <ClCompile Include="SecureCodec.cpp">
@@ -42,7 +36,6 @@
     <ClCompile Include="lz4.c">
       <Filter>LZ4</Filter>
     </ClCompile>
-    <ClCompile Include="ThreadPool.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileStorage.h">
@@ -50,9 +43,6 @@
     </ClInclude>
     <ClInclude Include="stringUtil.h">
       <Filter>String</Filter>
-    </ClInclude>
-    <ClInclude Include="MemoryFileStream.h">
-      <Filter>FileManageSystem</Filter>
     </ClInclude>
     <ClInclude Include="SecureCodec.h">
       <Filter>Encrypter</Filter>
@@ -63,6 +53,5 @@
     <ClInclude Include="lz4.h">
       <Filter>LZ4</Filter>
     </ClInclude>
-    <ClInclude Include="ThreadPool.h" />
   </ItemGroup>
 </Project>
