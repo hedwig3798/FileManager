@@ -2,7 +2,7 @@
 
 bool AES::CryptCTR(
 	const std::vector<unsigned char>& _data
-	, std::vector<unsigned char>& _output
+	, OUT std::vector<unsigned char>& _output
 	, const unsigned char* _key
 	, const unsigned char* _initVector
 )

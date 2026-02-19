@@ -1,21 +1,18 @@
 #pragma once
-#pragma once
 #include <string>
 #include <map>
 #include <set>
 #include <fstream>
-#include <windows.h>
 #include <memory>
 #include <sstream>
 #include <vector>
 #include <queue>
-#include <algorithm>
+#include <windows.h>
 #include <thread>
 #include <condition_variable>
 #include <mutex>
 
-#include "lz4hc.h"
-#include "lz4.h"
+#define OUT
 
 /// <summary>
 /// File Management System
@@ -33,14 +30,20 @@ private:
 		uint64_t m_offset;
 		uint64_t m_compressedSize;
 		uint64_t m_originalSize;
+		uint64_t m_blockIndex;
 		unsigned char m_key[32];
 		unsigned char m_iv[16];
+
+		bool operator<(const BlockInfo& _other)
+		{
+			return m_blockIndex < _other.m_blockIndex;
+		}
 	};
 
 	/// <summary>
 	/// 압축 정보 구조체
 	/// </summary>
-	struct CompressInfo 
+	struct CompressInfo
 	{
 		uint64_t m_totalOriginalSize = 0;
 		std::vector<BlockInfo> m_blocks;
@@ -54,13 +57,17 @@ private:
 		CompressInfo& m_comInfo;
 		std::vector<unsigned char> m_oriBuffer;
 		uint64_t m_dataSize;
+		uint64_t m_blockIndex;
 		static bool m_isSuccess;
 
 		JobInfo(CompressInfo& _comInfo)
 			: m_comInfo(_comInfo)
 			, m_dataSize(0)
+			, m_blockIndex(0)
 		{
 		}
+
+
 	};
 
 	// 파일 이름 - 압축 정보 맵
@@ -105,12 +112,19 @@ private:
 	std::queue<JobInfo> m_jobQ;
 	std::vector<std::thread> m_threads;
 
+	// 개발자용 파일 경로 매핑
+	std::map<std::wstring, std::wstring> m_devFileMap;
+
+	// 개발자 모드인지
+	bool m_isDevMode;
+
 public:
 	FileStorage();
 	virtual ~FileStorage();
 
 public:
 #pragma region GET_SET
+
 	void SetCompressExtension(const std::wstring& _extension) { m_comExtension = _extension; };
 	void SetDecompressOutputPath(const std::wstring& _path) { m_decompressPath = _path; };
 	void SetCompressFilePath(const std::wstring& _path) { m_compressPath = _path; };
@@ -118,7 +132,15 @@ public:
 
 	void SetThreadCount(uint32_t _count) { m_threadCount = _count; };
 	void SetChunkSize(uint32_t _size) { m_chunkSize = _size; };
+
+	void SetDevMode(bool _isDev) { m_isDevMode = _isDev; };
+
 #pragma endregion GET_SET
+
+	///////////////////////////////////////////////////////////////////////////
+
+#pragma region Public Region
+
 	/// <summary>
 	/// 모든 파일의 이름을 출력
 	/// </summary>
@@ -146,6 +168,35 @@ public:
 	/// </summary>
 	/// <returns>성공 여부</returns>
 	bool ResetCompressInfoMap();
+
+#pragma endregion Public Region
+
+	///////////////////////////////////////////////////////////////////////////
+
+#pragma region Dev Region
+
+	/// <summary>
+	/// 개발용 파일 맵 초기화
+	/// </summary>
+	/// <param name="_root">리소스 루트</param>
+	/// <returns></returns>
+	bool ResetDevFileMap(const std::wstring& _root);
+
+
+	/// <summary>
+	/// 압축되지 않은 파일을 읽기
+	/// 개발 용도
+	/// </summary>
+	/// <param name="_filename">파일 이름.확장자</param>
+	/// <param name="_fileData">데이터를 받을 벡터</param>
+	/// <returns></returns>
+	bool DevOpenFile(
+		const std::wstring& _filename
+		, OUT std::vector<unsigned char>& _fileData
+	);
+
+#pragma endregion
+
 
 private:
 

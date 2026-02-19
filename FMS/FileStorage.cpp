@@ -1,8 +1,11 @@
 ﻿#include "FileStorage.h"
 #include "stringUtil.h"
 #include "SecureCodec.h"
-
+#include <algorithm>
 #include <iostream>
+
+#include "lz4hc.h"
+#include "lz4.h"
 
 bool FileStorage::JobInfo::m_isSuccess = true;
 
@@ -17,6 +20,8 @@ FileStorage::FileStorage()
 	, m_currentPartFileSize(0)
 	, m_partFileIndex(0)
 	, m_chunkSize(0)
+	, m_currentChunkSize(0)
+	, m_isDevMode(false)
 {
 }
 
@@ -27,7 +32,7 @@ FileStorage::~FileStorage()
 
 bool FileStorage::CreateDirectory(const std::wstring& _path)
 {
-	bool result = ::CreateDirectory(_path.c_str(), nullptr);
+	bool result = ::CreateDirectoryW(_path.c_str(), nullptr);
 	// 디렉토리 생성 실패
 	if (false == result)
 	{
@@ -107,6 +112,7 @@ bool FileStorage::CompressDirectory(
 
 			// 파일 분할 시작
 			uint64_t remaining = fileSize;
+			uint64_t blockIndex = 0;
 			while (remaining > 0)
 			{
 				// 원본 파일 데이터 버퍼
@@ -137,6 +143,7 @@ bool FileStorage::CompressDirectory(
 					JobInfo job(m_compressInfoMap[name]);
 					job.m_oriBuffer = std::move(oriBuffer);
 					job.m_dataSize = toRead;
+					job.m_blockIndex = blockIndex++;
 
 					std::lock_guard<std::mutex> lock(m_jobMutex);
 					m_jobQ.push(std::move(job));
@@ -216,7 +223,7 @@ void FileStorage::CompressWithThread()
 		// 블록 메타데이터 작성
 		bInfo.m_compressedSize = compressedSize;
 		bInfo.m_originalSize = job.m_dataSize;
-
+		bInfo.m_blockIndex = job.m_blockIndex;
 		// 락이 두개가 필요한가?
 		std::unique_lock<std::mutex> chunkLock(m_chunkMutex);
 
@@ -524,6 +531,8 @@ bool FileStorage::CompressAll(const std::wstring& _path)
 			indexFile.write(reinterpret_cast<const char*>(&block.m_compressedSize), sizeof(block.m_compressedSize));
 			// 압축 해제 후 원본 크기
 			indexFile.write(reinterpret_cast<const char*>(&block.m_originalSize), sizeof(block.m_originalSize));
+			// 블록 순서 정보
+			indexFile.write(reinterpret_cast<const char*>(&block.m_blockIndex), sizeof(block.m_blockIndex));
 
 			// 암호화 정보 기록
 			indexFile.write(reinterpret_cast<const char*>(block.m_key), sizeof(block.m_key));
@@ -542,6 +551,11 @@ bool FileStorage::OpenFile(
 )
 {
 	_fileData.clear();
+
+	if (true == m_isDevMode)
+	{
+		return DevOpenFile(_filename, _fileData);
+	}
 
 	if (true == m_compressInfoMap.empty())
 	{
@@ -664,13 +678,100 @@ bool FileStorage::ResetCompressInfoMap()
 			indexFile.read(reinterpret_cast<char*>(&block.m_compressedSize), sizeof(block.m_compressedSize));
 			// 압축 해제 후 원본 크기
 			indexFile.read(reinterpret_cast<char*>(&block.m_originalSize), sizeof(block.m_originalSize));
+			indexFile.read(reinterpret_cast<char*>(&block.m_blockIndex), sizeof(block.m_blockIndex));
 			// 암호화 정보
 			indexFile.read(reinterpret_cast<char*>(block.m_key), sizeof(block.m_key));
 			indexFile.read(reinterpret_cast<char*>(block.m_iv), sizeof(block.m_iv));
 
 			comFileInfo.m_blocks.push_back(block);
 		}
+
+		std::sort(comFileInfo.m_blocks.begin(), comFileInfo.m_blocks.end());
 	}
+
+	return true;
+}
+
+bool FileStorage::ResetDevFileMap(const std::wstring& _root)
+{
+	// 입력받은 디렉토리 열기
+	WIN32_FIND_DATAW fd;
+	HANDLE hFind = FindFirstFileW((_root + L"\\*").c_str(), &fd);
+
+	// 실패
+	if (INVALID_HANDLE_VALUE == hFind)
+	{
+		return false;
+	}
+
+	// 디렉토리 순회
+	do
+	{
+		std::wstring name = fd.cFileName;
+
+		// 특수 디렉토리 제외
+		if (name == L"." || name == L"..")
+		{
+			continue;
+		}
+
+		// 파일의 전체 경로
+		std::wstring fullPath = _root + L"\\" + name;
+
+		// 디렉토리라면 재귀
+		if (FILE_ATTRIBUTE_DIRECTORY & fd.dwFileAttributes)
+		{
+			ResetDevFileMap(fullPath);
+		}
+		// 파일만 압축
+		else
+		{
+			// 파일 스트림
+			std::ifstream oriFile(fullPath, std::ios::binary);
+
+			// 파일 열기 실패
+			if (false == oriFile.is_open())
+			{
+				return false;
+			}
+
+			// 모든 파일의 인덱스를 위한 기록
+			m_devFileMap[name] = fullPath;
+		}
+	} while (FindNextFileW(hFind, &fd));
+
+	FindClose(hFind);
+	return true;
+}
+
+bool FileStorage::DevOpenFile(const std::wstring& _filename, OUT std::vector<unsigned char>& _fileData)
+{
+	_fileData.clear();
+
+	auto mit = m_devFileMap.find(_filename);
+
+	// 파일이 존재하지 않음
+	if (m_devFileMap.end() == mit)
+	{
+		return false;
+	}
+
+	// 파일 열기 시도
+	std::ifstream file(mit->second, std::ios::binary);
+	if (false == file.is_open())
+	{
+		return false;
+	}
+
+	// 포인터를 파일의 끝으로 옮겨서 파일 크기 구하기
+	file.seekg(0, std::ios::end);
+	uint64_t fileSize = file.tellg();
+	file.seekg(0, std::ios::beg);
+
+	_fileData.resize(fileSize);
+
+	// 파일 데이터 읽기
+	file.read(reinterpret_cast<char*>(_fileData.data()), fileSize);
 
 	return true;
 }
