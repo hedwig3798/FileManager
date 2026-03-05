@@ -13,7 +13,8 @@ FetchContent_MakeAvailable(lz4)
 find_package(OpenSSL REQUIRED)
 
 # 소스 파일 및 출력 경로 설정
-set(TSOURCE_FILES
+set(
+    TSOURCE_FILES
     FileStorage.h FileStorage.cpp
     SecureCodec.h SecureCodec.cpp
     stringUtil.h
@@ -21,14 +22,20 @@ set(TSOURCE_FILES
 
 add_library(FMS STATIC ${TSOURCE_FILES})
 
-target_include_directories(FMS PUBLIC 
+target_include_directories(
+    FMS 
+
+    PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<INSTALL_INTERFACE:include/FMS>
 )
 
 # 라이브러리 연결
-target_link_libraries(FMS PRIVATE 
-    lz4_static 
+target_link_libraries(
+    FMS 
+
+    PRIVATE 
+    lz4
     OpenSSL::Crypto 
 )
 
