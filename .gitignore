@@ -43,3 +43,5 @@ x86/
 .idea/
 .DS_Store
 Thumbs.db
+CompressTest/
+CompressTestOrigin/

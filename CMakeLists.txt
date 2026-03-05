@@ -10,18 +10,4 @@ endif()
 # 하위 폴더 추가 (여기서 FMS 타겟이 생성됨)
 add_subdirectory(FMS)
 
-# 1. 타겟 설치 (루트에서 관리)
-install(TARGETS FMS
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
-
-# 2. 공통 파일 설치 (루트 경로에서 바로 참조)
-install(FILES 
-    "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
-    "${CMAKE_CURRENT_SOURCE_DIR}/THIRD-PARTY-NOTICES.md"
-    DESTINATION .
-)
-
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT FMS)
