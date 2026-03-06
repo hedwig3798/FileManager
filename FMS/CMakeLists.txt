@@ -1,5 +1,7 @@
 include(FetchContent)
 
+set(STATIC_LIBS "")
+
 # lz4 라이브러리
 FetchContent_Declare(
   lz4
@@ -8,6 +10,7 @@ FetchContent_Declare(
   SOURCE_SUBDIR  build/cmake
 )
 FetchContent_MakeAvailable(lz4)
+list(APPEND STATIC_LIBS lz4_static)
 
 # openssl 라이브러리 설치 필요
 find_package(OpenSSL REQUIRED)
@@ -21,6 +24,7 @@ set(
 )
 
 add_library(FMS STATIC ${TSOURCE_FILES})
+list(APPEND STATIC_LIBS FMS)
 
 target_include_directories(
     FMS 
@@ -48,3 +52,20 @@ source_group("String" FILES stringUtil.h stringUtil.cpp)
 target_include_directories(FMS PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 install(FILES "FileStorage.h" DESTINATION include/FMS)
+
+# lib 병합
+set(LIB_FILE_PATHS "")
+foreach(lib IN LISTS STATIC_LIBS)
+    list(APPEND LIB_FILE_PATHS "$<TARGET_FILE:${lib}>")
+endforeach()
+
+add_custom_target(merged_static_lib ALL DEPENDS ${STATIC_LIBS})
+
+add_custom_command(
+    TARGET 
+        merged_static_lib 
+    POST_BUILD
+    COMMAND 
+        link.exe /lib /OUT:"${BIN_OUTPUT_DIR}/$<CONFIG>/FMS.lib"
+        ${LIB_FILE_PATHS}
+)
