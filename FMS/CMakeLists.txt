@@ -1,7 +1,5 @@
 include(FetchContent)
 
-set(STATIC_LIBS "")
-
 # lz4 라이브러리
 FetchContent_Declare(
   lz4
@@ -10,7 +8,6 @@ FetchContent_Declare(
   SOURCE_SUBDIR  build/cmake
 )
 FetchContent_MakeAvailable(lz4)
-list(APPEND STATIC_LIBS lz4_static)
 
 # openssl 라이브러리 설치 필요
 find_package(OpenSSL REQUIRED)
@@ -23,20 +20,19 @@ set(
     stringUtil.h
 )
 
-add_library(FMSInternal STATIC ${TSOURCE_FILES})
-list(APPEND STATIC_LIBS FMSInternal)
+add_library(FMS STATIC ${TSOURCE_FILES})
 
 target_include_directories(
-    FMSInternal 
+    FMS 
 
     PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:include/FMSInternal>
+    $<INSTALL_INTERFACE:include/FMS>
 )
 
 # 라이브러리 연결
 target_link_libraries(
-    FMSInternal 
+    FMS 
 
     PRIVATE 
     lz4
@@ -49,36 +45,6 @@ source_group("FileManageSystem" FILES FileStorage.h FileStorage.cpp)
 source_group("String" FILES stringUtil.h stringUtil.cpp)
 
 # 인클루드 경로 설정
-target_include_directories(FMSInternal PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(FMS PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# lib 병합
-set(LIB_FILE_PATHS "")
-foreach(lib IN LISTS STATIC_LIBS)
-    list(APPEND LIB_FILE_PATHS "$<TARGET_FILE:${lib}>")
-endforeach()
-
-add_custom_target(MergedLib ALL DEPENDS ${STATIC_LIBS})
-set(MERGED_DIR "${CMAKE_BINARY_DIR}/merged/$<CONFIG>")
-set(FINAL_FMS_LIB "${MERGED_DIR}/FMS$<$<CONFIG:Debug>:${CMAKE_DEBUG_POSTFIX}>.lib")
-
-add_custom_command(
-    TARGET 
-        MergedLib 
-    POST_BUILD
-    COMMAND 
-        ${CMAKE_COMMAND} -E make_directory "${MERGED_DIR}"
-    COMMAND 
-        link.exe /lib /OUT:"${FINAL_FMS_LIB}"
-        ${LIB_FILE_PATHS}
-)
-
-install(
-    FILES 
-        "${FINAL_FMS_LIB}" 
-    DESTINATION 
-        "${CMAKE_INSTALL_LIBDIR}"
-    RENAME
-        "${FINAL_LIB_NAME}"
-
-)
-install(FILES "FileStorage.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/FMS)
+install(FILES "FileStorage.h" DESTINATION include/FMS)
