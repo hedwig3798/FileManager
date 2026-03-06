@@ -31,7 +31,7 @@ target_include_directories(
 
     PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:include/FMS>
+    $<INSTALL_INTERFACE:include/FMSInternal>
 )
 
 # 라이브러리 연결
