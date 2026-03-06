@@ -57,13 +57,13 @@ foreach(lib IN LISTS STATIC_LIBS)
     list(APPEND LIB_FILE_PATHS "$<TARGET_FILE:${lib}>")
 endforeach()
 
-add_custom_target(merged_static_lib ALL DEPENDS ${STATIC_LIBS})
+add_custom_target(MergedLib ALL DEPENDS ${STATIC_LIBS})
 set(MERGED_DIR "${CMAKE_BINARY_DIR}/merged/$<CONFIG>")
-set(FINAL_FMS_LIB "${MERGED_DIR}/FMS"<$<CONFIG:Debug>:${CMAKE_DEBUG_POSTFIX}".lib")
+set(FINAL_FMS_LIB "${MERGED_DIR}/FMS$<$<CONFIG:Debug>:${CMAKE_DEBUG_POSTFIX}>.lib")
 
 add_custom_command(
     TARGET 
-        merged_static_lib 
+        MergedLib 
     POST_BUILD
     COMMAND 
         ${CMAKE_COMMAND} -E make_directory "${MERGED_DIR}"
