@@ -59,7 +59,7 @@ endforeach()
 
 add_custom_target(merged_static_lib ALL DEPENDS ${STATIC_LIBS})
 set(MERGED_DIR "${CMAKE_BINARY_DIR}/merged/$<CONFIG>")
-set(FINAL_FMS_LIB_PATH "${MERGED_DIR}/FMS.lib")
+set(FINAL_FMS_LIB "${MERGED_DIR}/FMS.lib")
 add_custom_command(
     TARGET 
         merged_static_lib 
