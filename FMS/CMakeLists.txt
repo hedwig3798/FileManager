@@ -59,7 +59,8 @@ endforeach()
 
 add_custom_target(merged_static_lib ALL DEPENDS ${STATIC_LIBS})
 set(MERGED_DIR "${CMAKE_BINARY_DIR}/merged/$<CONFIG>")
-set(FINAL_FMS_LIB "${MERGED_DIR}/FMS.lib")
+set(FINAL_FMS_LIB "${MERGED_DIR}/FMS"<$<CONFIG:Debug>:${CMAKE_DEBUG_POSTFIX}".lib")
+
 add_custom_command(
     TARGET 
         merged_static_lib 
@@ -71,5 +72,13 @@ add_custom_command(
         ${LIB_FILE_PATHS}
 )
 
-install(FILES "${FINAL_FMS_LIB}" DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(
+    FILES 
+        "${FINAL_FMS_LIB}" 
+    DESTINATION 
+        "${CMAKE_INSTALL_LIBDIR}"
+    RENAME
+        "${FINAL_LIB_NAME}"
+
+)
 install(FILES "FileStorage.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/FMS)
