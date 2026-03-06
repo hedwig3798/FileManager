@@ -49,7 +49,7 @@ source_group("FileManageSystem" FILES FileStorage.h FileStorage.cpp)
 source_group("String" FILES stringUtil.h stringUtil.cpp)
 
 # 인클루드 경로 설정
-target_include_directories(FMS PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(FMSInternal PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # lib 병합
 set(LIB_FILE_PATHS "")
