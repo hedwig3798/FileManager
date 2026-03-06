@@ -58,13 +58,13 @@ foreach(lib IN LISTS STATIC_LIBS)
 endforeach()
 
 add_custom_target(merged_static_lib ALL DEPENDS ${STATIC_LIBS})
-
+set(FINAL_FMS_LIB "${CMAKE_BINARY_DIR}/merged/$<CONFIG>/FMS.lib")
 add_custom_command(
     TARGET 
         merged_static_lib 
     POST_BUILD
     COMMAND 
-        link.exe /lib /OUT:"${CMAKE_INSTALL_LIBDIR}/$<CONFIG>/FMS.lib"
+        link.exe /lib /OUT:"${FINAL_FMS_LIB}"
         ${LIB_FILE_PATHS}
 )
 
