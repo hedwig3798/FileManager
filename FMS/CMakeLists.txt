@@ -23,11 +23,11 @@ set(
     stringUtil.h
 )
 
-add_library(FMS STATIC ${TSOURCE_FILES})
-list(APPEND STATIC_LIBS FMS)
+add_library(FMSInternal STATIC ${TSOURCE_FILES})
+list(APPEND STATIC_LIBS FMSInternal)
 
 target_include_directories(
-    FMS 
+    FMSInternal 
 
     PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -36,7 +36,7 @@ target_include_directories(
 
 # 라이브러리 연결
 target_link_libraries(
-    FMS 
+    FMSInternal 
 
     PRIVATE 
     lz4
@@ -51,8 +51,6 @@ source_group("String" FILES stringUtil.h stringUtil.cpp)
 # 인클루드 경로 설정
 target_include_directories(FMS PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
-install(FILES "FileStorage.h" DESTINATION include/FMS)
-
 # lib 병합
 set(LIB_FILE_PATHS "")
 foreach(lib IN LISTS STATIC_LIBS)
@@ -66,6 +64,9 @@ add_custom_command(
         merged_static_lib 
     POST_BUILD
     COMMAND 
-        link.exe /lib /OUT:"${BIN_OUTPUT_DIR}/$<CONFIG>/FMS.lib"
+        link.exe /lib /OUT:"${CMAKE_INSTALL_LIBDIR}/$<CONFIG>/FMS.lib"
         ${LIB_FILE_PATHS}
 )
+
+install(FILES "${FINAL_FMS_LIB}" DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES "FileStorage.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/FMS)
