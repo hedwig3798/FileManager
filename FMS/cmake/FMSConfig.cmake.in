@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+# FMS를 find_package()로 찾을 때, 하위 종속성도 연쇄적으로 찾도록 지시하는 매크로
+include(CMakeFindDependencyMacro)
+
+# FMS가 의존하는 하위 패키지들을 명시 (버전이 필요하다면 적어줍니다)
+find_dependency(OpenSSL)
+find_dependency(lz4)
+
+# 위에서 install(EXPORT ...) 로 생성했던 타겟 정보를 불러옴
+include("${CMAKE_CURRENT_LIST_DIR}/FMSTargets.cmake")
+
+check_required_components(FMS)
