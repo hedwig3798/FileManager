@@ -18,7 +18,7 @@ set(
     TSOURCE_FILES
     FileStorage.h FileStorage.cpp
     SecureCodec.h SecureCodec.cpp
-    stringUtil.h
+    stringUtil.h stringUtil.cpp
 )
 
 add_library(FMS STATIC ${TSOURCE_FILES})
